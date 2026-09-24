@@ -1,0 +1,25 @@
+# Regulatory discharge limits for urban/industrial wastewater treatment effluent
+standards:
+  BOD:
+    column: "DBO-S"
+    limit_max: 30.0    # mg/L (EU 91/271: 25-30 mg/L)
+    unit: "mg/L"
+  COD:
+    column: "DQO-S"
+    limit_max: 125.0   # mg/L
+    unit: "mg/L"
+  SS:
+    column: "SS-S"
+    limit_max: 35.0    # mg/L
+    unit: "mg/L"
+  pH:
+    column: "PH-S"
+    limit_min: 6.5
+    limit_max: 8.5
+    unit: "pH units"
+
+alert_bands:
+  green: 0.20          # ECRI < 0.20: Normal compliant operation
+  watch: 0.50          # 0.20 <= ECRI < 0.50: Watchlist, elevation risk
+  act: 0.80            # 0.50 <= ECRI < 0.80: Action required, pre-violation
+  red: 1.00            # Measured violation or ECRI >= 0.80: Violation alert
