@@ -95,6 +95,6 @@ There are fourteen tests. These are the ones worth naming:
 - **An ordinary day comes out as normal.** Cosine similarity alone names a fault for every day. The deviation gate is what lets a nominal day through.
 - **Limits come from the config file.**
 
-## Data license
+## License
 
-The UCI Water Treatment Plant dataset was created by Manel Poch and is licensed under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/), [doi:10.24432/C5FS4C](https://doi.org/10.24432/C5FS4C).
+The code is MIT-licensed; see [LICENSE](LICENSE). The UCI Water Treatment Plant dataset was created by Manel Poch and is licensed under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/), [doi:10.24432/C5FS4C](https://doi.org/10.24432/C5FS4C).
