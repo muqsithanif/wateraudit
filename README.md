@@ -8,41 +8,38 @@ Industrial and municipal wastewater treatment plant (WWTP) effluent compliance m
 
 ---
 
-## The Industrial Problem: Laboratory Delays vs Real-Time Compliance
+## Background: Laboratory Latency vs Real-Time Compliance
 
-Environmental regulations (EU Directive 91/271/EEC, US EPA Clean Water Act, and Indonesia KLHK Baku Mutu Air Limbah) impose strict statutory concentration limits on wastewater discharge:
+Statutory environmental regulations (such as EU Directive 91/271/EEC and EPA discharge standards) enforce strict limits on treated wastewater effluent:
 - **Biochemical Oxygen Demand (BOD₅):** $\le 30.0\text{ mg/L}$
 - **Chemical Oxygen Demand (COD):** $\le 125.0\text{ mg/L}$
 - **Suspended Solids (SS):** $\le 35.0\text{ mg/L}$
-- **Acidity/Alkalinity:** $6.5 \le \text{pH} \le 8.5$
+- **Acidity / Alkalinity:** $6.5 \le \text{pH} \le 8.5$
 
-### The 5-Day Feedback Lag
-Measuring Biochemical Oxygen Demand in an analytical wet chemistry laboratory requires **5 full incubation days ($\text{BOD}_5$)**. If an industrial aeration basin or clarifier experiences toxic inhibition or sludge bulking today, laboratory results arrive 5 days after thousands of cubic meters of non-compliant effluent have already contaminated downstream waterways.
-
-`wateraudit` bridges this feedback gap with **online machine learning soft-sensors** and **distribution-free conformal prediction bounds**.
+Standard laboratory measurement of Biochemical Oxygen Demand requires a 5-day incubation period ($\text{BOD}_5$). Process upsets (such as sudden organic overloads or clarifier malfunctions) may go undetected in analytical data for days. `wateraudit` combines gradient boosted quantile regression with distribution-free conformal prediction to generate real-time concentration estimates and statistical bounds ($[y_{\text{low}}, y_{\text{high}}]$) from online telemetry.
 
 ---
 
-## Authentic Benchmark Dataset: UCI Water Treatment Plant
+## Dataset: UCI Water Treatment Plant
 
-All models and diagnostics are evaluated on the official **UCI Machine Learning Repository Water Treatment Plant Dataset** (`D-1/3/90` through operational lifecycle):
+Models and diagnostic modules are evaluated on daily operational data from the **UCI Machine Learning Repository Water Treatment Plant Dataset**:
 - **527 daily multi-sensor records** from an operational urban wastewater treatment plant.
-- **38 continuous physical/chemical attributes** tracking four plant stages:
+- **38 continuous physical and chemical attributes** tracking four plant stages:
   - **Inlet (`-E`):** Influent flow rate ($Q$), Zinc ($Zn$), pH, BOD, COD, Suspended Solids, Volatile Solids, Sediments, Conductivity.
   - **Primary Clarifier (`-P`):** Settler pH, BOD, SS, SSV, Sediments, Conductivity.
-  - **Secondary / Biological Settler (`-D`):** Aeration tank & secondary clarifier parameters.
+  - **Secondary / Biological Settler (`-D`):** Aeration tank and secondary clarifier parameters.
   - **Final Discharge / Effluent (`-S`):** Effluent concentrations and global removal efficiencies (`RD-*`).
 
-### Feature Tier Hierarchy & Strict Leakage Guard
-`core/schema.py` enforces strict operational data partitioning:
+### Feature Hierarchy & Data Partitioning
 
-```
-T0: Instantaneous Online Probes    Q-E, PH-{E,P,D,S}, COND-{E,P,D,S} (Zero laboratory lag)
-T1: Rapid Physical Lab Tests       SED-{E,P,D}, SSV-{E,P,D}, ZN-E (Hourly settleability)
-T2: Slow Chemical Lab Tests        Lagged BOD, COD, SS (Lag >= 1 day only)
-FORBIDDEN / LEAKAGE GUARD          All RD-* removal efficiency columns and same-day target outputs
-```
-*Any column calculated from same-day output concentrations (e.g. `RD-DBO-G = 1 - DBO-S/DBO-E`) is programmatically rejected by the schema to guarantee zero data leakage.*
+`core/schema.py` partitions features into operational tiers to prevent target leakage:
+
+| Tier | Category | Included Sensors | Operational Latency |
+|---|---|---|---|
+| **Tier 0** | Online Telemetry Probes | `Q-E`, `PH-{E,P,D,S}`, `COND-{E,P,D,S}` | Instantaneous (Seconds) |
+| **Tier 1** | Rapid Physical Tests | `SED-{E,P,D}`, `SSV-{E,P,D}`, `ZN-E` | Rapid (< 1 hour) |
+| **Tier 2** | Historical Lab Values | Lagged BOD, COD, SS (`lag >= 1 day`) | 24-120 hour delay |
+| **Excluded** | Target Leakage Guard | All `RD-*` efficiency ratios and same-day target outputs | Prohibited |
 
 ---
 

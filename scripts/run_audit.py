@@ -19,9 +19,7 @@ from core.visualizer import WaterAuditVisualizer
 
 
 def main():
-    print("==================================================================")
-    print("    wateraudit: Wastewater Effluent Compliance & Soft-Sensing")
-    print("==================================================================")
+    print("wateraudit: Running wastewater compliance and soft-sensing audit...")
 
     # 1. Load Authentic UCI Benchmark Dataset
     print("\n[1/5] Loading Authentic UCI Wastewater Treatment Plant Dataset...")
@@ -160,10 +158,7 @@ def main():
         save_path=str(dashboard_path),
     )
     print(f"      Saved Dashboard Plot      -> {dashboard_path}")
-
-    print("\n==================================================================")
-    print("Water Audit Pipeline Completed Successfully!")
-    print("==================================================================")
+    print(f"Water audit pipeline finished. Artifacts saved to: {samples_dir}")
 
 
 if __name__ == "__main__":
