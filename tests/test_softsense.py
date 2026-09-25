@@ -14,7 +14,6 @@ def dummy_data():
         "PH-E": rng.normal(7.8, 0.3, n),
         "COND-E": rng.normal(2000, 300, n),
     })
-    # Target BOD with log-normal noise
     y = pd.Series(np.clip(20.0 + 0.0003 * X["Q-E"] + rng.normal(0, 4, n), 2.0, 80.0))
     return X, y
 
@@ -39,3 +38,23 @@ def test_soft_sensor_fit_calibrate_predict(dummy_data):
         assert iv.lower >= 0.0
         # Exceedance probability bounded in [0, 1]
         assert 0.0 <= iv.exceedance_prob <= 1.0
+
+
+def test_conformal_coverage_holds_on_exchangeable_data():
+    # The 90% guarantee is marginal and assumes calibration and test data are
+    # exchangeable. On i.i.d. data the empirical coverage should sit near 90%,
+    # which is the property the chronological split on the real plant data
+    # does not have.
+    rng = np.random.RandomState(0)
+    n = 4000
+    X = pd.DataFrame({"a": rng.normal(size=n), "b": rng.normal(size=n)})
+    y = pd.Series(np.exp(2.8 + 0.4 * X["a"] - 0.2 * X["b"] + rng.normal(0, 0.35, n)))
+
+    sensor = QuantileSoftSensor(target_name="DBO-S", alpha=0.10, random_state=0)
+    sensor.fit(X.iloc[:1000], y.iloc[:1000])
+    sensor.calibrate(X.iloc[1000:2000], y.iloc[1000:2000])
+    intervals = sensor.predict_interval(X.iloc[2000:])
+
+    actual = y.iloc[2000:].to_numpy()
+    coverage = np.mean([iv.lower <= v <= iv.upper for iv, v in zip(intervals, actual)])
+    assert 0.87 <= coverage <= 0.93

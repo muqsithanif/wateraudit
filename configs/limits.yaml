@@ -1,16 +1,21 @@
-# Regulatory discharge limits for urban/industrial wastewater treatment effluent
+# Effluent discharge limits used by the compliance check.
+#
+# BOD, COD and SS follow the concentration limits in EU Directive 91/271/EEC,
+# Annex I, Table 1 (plants above 10,000 population equivalent). The directive
+# sets no pH limit; 6.5-8.5 is an assumed operating band. Edit this file for
+# another jurisdiction.
 standards:
   BOD:
     column: "DBO-S"
-    limit_max: 30.0    # mg/L (EU 91/271: 25-30 mg/L)
+    limit_max: 25.0
     unit: "mg/L"
   COD:
     column: "DQO-S"
-    limit_max: 125.0   # mg/L
+    limit_max: 125.0
     unit: "mg/L"
   SS:
     column: "SS-S"
-    limit_max: 35.0    # mg/L
+    limit_max: 35.0
     unit: "mg/L"
   pH:
     column: "PH-S"
@@ -18,8 +23,8 @@ standards:
     limit_max: 8.5
     unit: "pH units"
 
+# Lower edge of each band on the risk index; below `watch` is GREEN.
 alert_bands:
-  green: 0.20          # ECRI < 0.20: Normal compliant operation
-  watch: 0.50          # 0.20 <= ECRI < 0.50: Watchlist, elevation risk
-  act: 0.80            # 0.50 <= ECRI < 0.80: Action required, pre-violation
-  red: 1.00            # Measured violation or ECRI >= 0.80: Violation alert
+  watch: 0.20
+  act: 0.50
+  red: 0.80

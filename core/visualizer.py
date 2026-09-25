@@ -1,5 +1,5 @@
-"""Visualizer for wastewater effluent compliance, soft-sensor conformal intervals, and plant telemetry."""
-from typing import List, Tuple, Dict, Optional
+"""Dashboard for the effluent soft sensors and the forecast risk index."""
+from typing import List, Tuple
 import numpy as np
 import matplotlib
 matplotlib.use("Agg")
@@ -9,7 +9,7 @@ from core.softsense import ConformalInterval
 
 
 class WaterAuditVisualizer:
-    """Renders comprehensive environmental compliance dashboards and soft-sensing validation plots."""
+    """Renders the three-panel test-period dashboard."""
 
     @classmethod
     def plot_effluent_dashboard(
@@ -22,58 +22,43 @@ class WaterAuditVisualizer:
         ecri_history: List[float],
         alert_bands: List[str],
         save_path: str,
+        bod_limit: float = 25.0,
+        cod_limit: float = 125.0,
+        bands: Tuple[float, float, float] = (0.20, 0.50, 0.80),
     ) -> None:
-        """Plot a 3-panel operational dashboard: BOD prediction, COD prediction, and ECRI risk timeline."""
+        """Plot BOD and COD predictions against lab values, then the risk index."""
         fig, axes = plt.subplots(3, 1, figsize=(12, 10), sharex=True, dpi=120)
 
-        # 1. Biological Oxygen Demand (BOD) Panel
-        ax_bod = axes[0]
-        bod_meds = [p.median for p in predicted_bod]
-        bod_lows = [p.lower for p in predicted_bod]
-        bod_highs = [p.upper for p in predicted_bod]
+        panels = [
+            (axes[0], actual_bod, predicted_bod, bod_limit, "BOD", "#1f77b4", "#d90429", "o"),
+            (axes[1], actual_cod, predicted_cod, cod_limit, "COD", "#2ca02c", "#e65100", "s"),
+        ]
+        for ax, actual, predicted, limit, name, lab_color, pred_color, marker in panels:
+            ax.plot(time_index, actual, marker, linestyle="none", color=lab_color, markersize=4, alpha=0.75,
+                    label=f"Lab {name}")
+            ax.plot(time_index, [p.median for p in predicted], color=pred_color, lw=1.8, label="Predicted median")
+            ax.fill_between(time_index, [p.lower for p in predicted], [p.upper for p in predicted],
+                            color=pred_color, alpha=0.20, label="90% conformal interval")
+            ax.axhline(limit, color="red", linestyle="--", lw=1.5, label=f"Limit ({limit:g} mg/L)")
+            ax.set_title(f"Effluent {name}: soft-sensor prediction vs lab result", fontsize=10, weight="bold")
+            ax.set_ylabel(f"{name} (mg/L)", fontsize=9)
+            ax.legend(loc="upper right", fontsize=8)
+            ax.grid(alpha=0.3)
 
-        ax_bod.plot(time_index, actual_bod, "o", color="#1f77b4", markersize=4, alpha=0.75, label="Lab BOD Measurement")
-        ax_bod.plot(time_index, bod_meds, color="#d90429", lw=1.8, label="Soft-Sensor Predicted Median")
-        ax_bod.fill_between(time_index, bod_lows, bod_highs, color="#d90429", alpha=0.20, label="90% Conformal Bounds")
-        ax_bod.axhline(30.0, color="red", linestyle="--", lw=1.5, label="Legal Limit (30 mg/L)")
-
-        ax_bod.set_title("Effluent Biological Oxygen Demand (BOD / DBO-S) Soft-Sensing", fontsize=10, weight="bold")
-        ax_bod.set_ylabel("BOD (mg/L)", fontsize=9)
-        ax_bod.legend(loc="upper right", fontsize=8)
-        ax_bod.grid(alpha=0.3)
-
-        # 2. Chemical Oxygen Demand (COD) Panel
-        ax_cod = axes[1]
-        cod_meds = [p.median for p in predicted_cod]
-        cod_lows = [p.lower for p in predicted_cod]
-        cod_highs = [p.upper for p in predicted_cod]
-
-        ax_cod.plot(time_index, actual_cod, "s", color="#2ca02c", markersize=4, alpha=0.75, label="Lab COD Measurement")
-        ax_cod.plot(time_index, cod_meds, color="#e65100", lw=1.8, label="Soft-Sensor Predicted Median")
-        ax_cod.fill_between(time_index, cod_lows, cod_highs, color="#e65100", alpha=0.20, label="90% Conformal Bounds")
-        ax_cod.axhline(125.0, color="red", linestyle="--", lw=1.5, label="Legal Limit (125 mg/L)")
-
-        ax_cod.set_title("Effluent Chemical Oxygen Demand (COD / DQO-S) Soft-Sensing", fontsize=10, weight="bold")
-        ax_cod.set_ylabel("COD (mg/L)", fontsize=9)
-        ax_cod.legend(loc="upper right", fontsize=8)
-        ax_cod.grid(alpha=0.3)
-
-        # 3. Environmental Compliance Risk Index (ECRI)
+        watch, act, red = bands
         ax_ecri = axes[2]
-        ax_ecri.plot(time_index, ecri_history, color="#3f51b5", lw=2.0, label="Daily ECRI Score")
-        ax_ecri.axhline(0.20, color="#2a9d8f", linestyle=":", lw=1.2, label="Green/Watch (0.20)")
-        ax_ecri.axhline(0.50, color="#f77f00", linestyle="--", lw=1.2, label="Watch/Act (0.50)")
-        ax_ecri.axhline(0.80, color="#d90429", linestyle="-.", lw=1.5, label="Critical Red (0.80)")
+        ax_ecri.plot(time_index, ecri_history, color="#3f51b5", lw=2.0, label="Risk index (forecast only)")
+        ax_ecri.axhline(watch, color="#2a9d8f", linestyle=":", lw=1.2, label=f"Watch ({watch:.2f})")
+        ax_ecri.axhline(act, color="#f77f00", linestyle="--", lw=1.2, label=f"Act ({act:.2f})")
+        ax_ecri.axhline(red, color="#d90429", linestyle="-.", lw=1.5, label=f"Red ({red:.2f})")
+        ax_ecri.axhspan(0.0, watch, facecolor="#2a9d8f", alpha=0.08)
+        ax_ecri.axhspan(watch, act, facecolor="#f77f00", alpha=0.08)
+        ax_ecri.axhspan(act, red, facecolor="#e76f51", alpha=0.08)
+        ax_ecri.axhspan(red, 1.0, facecolor="#d90429", alpha=0.12)
 
-        # Color-coded background bands
-        ax_ecri.axhspan(0.0, 0.20, facecolor="#2a9d8f", alpha=0.08)
-        ax_ecri.axhspan(0.20, 0.50, facecolor="#f77f00", alpha=0.08)
-        ax_ecri.axhspan(0.50, 0.80, facecolor="#e76f51", alpha=0.08)
-        ax_ecri.axhspan(0.80, 1.0, facecolor="#d90429", alpha=0.12)
-
-        ax_ecri.set_title("Environmental Compliance Risk Index (ECRI) & Regulatory Alert Level", fontsize=10, weight="bold")
-        ax_ecri.set_xlabel("Operational Days (Timeline)", fontsize=9)
-        ax_ecri.set_ylabel("ECRI Score [0, 1]", fontsize=9)
+        ax_ecri.set_title("Compliance risk index from the forecast", fontsize=10, weight="bold")
+        ax_ecri.set_xlabel("Test-period record (time order)", fontsize=9)
+        ax_ecri.set_ylabel("Risk index [0, 1]", fontsize=9)
         ax_ecri.set_ylim([-0.02, 1.02])
         ax_ecri.legend(loc="upper right", fontsize=8)
         ax_ecri.grid(alpha=0.3)
