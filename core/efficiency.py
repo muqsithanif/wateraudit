@@ -12,6 +12,7 @@ class PlantDiagnosticReport:
     primary_efficiency_residual: float
     secondary_efficiency_residual: float
     active_alarms: List[str]
+    deviation: float                            # Norm of the diagnostic vector
     fault_hypotheses: List[Tuple[str, float]]  # [(Hypothesis, Confidence)]
 
 
@@ -23,12 +24,12 @@ class SettlerEfficiencyAnalyzer:
         "Sludge Bulking": np.array([0.0, 0.0, 1.5, 0.2, 1.2]),
         "Toxic Shock / Bio-Inhibition": np.array([0.0, 1.4, 0.1, 0.0, 0.1]),
         "Primary Settler Mechanical Fault": np.array([0.0, 0.2, 0.2, -1.0, 0.0]),
-        "Normal Operation": np.array([0.0, 0.0, 0.0, 0.0, 0.0]),
     }
 
-    def __init__(self, cusum_k: float = 0.5, cusum_h: float = 4.0):
+    def __init__(self, cusum_k: float = 0.5, cusum_h: float = 4.0, normal_radius: float = 1.0):
         self.cusum_k = cusum_k
         self.cusum_h = cusum_h
+        self.normal_radius = normal_radius
         self.cusum_primary: float = 0.0
         self.cusum_secondary: float = 0.0
 
@@ -87,17 +88,18 @@ class SettlerEfficiencyAnalyzer:
             sed_out if np.isfinite(sed_out) else 0.5,
         ])
 
-        # Signature matching against prototypes via cosine similarity
+        # Cosine similarity ignores magnitude, so on its own it matches an
+        # ordinary day to whichever fault signature points the same way. A day
+        # is only attributed to a fault once it has moved away from normal.
+        deviation = float(np.linalg.norm(obs_vector))
         hypotheses: List[Tuple[str, float]] = []
-        obs_norm = np.linalg.norm(obs_vector) + 1e-6
-
-        for name, proto in self.FAULT_PROTOTYPES.items():
-            proto_norm = np.linalg.norm(proto) + 1e-6
-            similarity = float(np.dot(obs_vector, proto) / (obs_norm * proto_norm))
-            hypotheses.append((name, similarity))
-
-        # Sort descending by similarity
-        hypotheses.sort(key=lambda h: h[1], reverse=True)
+        if deviation <= self.normal_radius:
+            hypotheses.append(("Normal Operation", 1.0))
+        else:
+            for name, proto in self.FAULT_PROTOTYPES.items():
+                similarity = float(np.dot(obs_vector, proto) / (deviation * np.linalg.norm(proto)))
+                hypotheses.append((name, similarity))
+            hypotheses.sort(key=lambda h: h[1], reverse=True)
 
         return PlantDiagnosticReport(
             global_bod_removal=eff_bod * 100.0,
@@ -106,5 +108,6 @@ class SettlerEfficiencyAnalyzer:
             primary_efficiency_residual=res_prim,
             secondary_efficiency_residual=res_sec,
             active_alarms=alarms,
+            deviation=deviation,
             fault_hypotheses=hypotheses[:3],
         )

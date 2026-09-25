@@ -45,3 +45,6 @@ def test_normal_operation_diagnosis():
     )
     assert report.global_bod_removal > 90.0
     assert report.global_ss_removal > 90.0
+    # Cosine similarity alone would still name a fault here; the deviation
+    # gate is what lets an ordinary day come out as normal.
+    assert report.fault_hypotheses[0][0] == "Normal Operation"
