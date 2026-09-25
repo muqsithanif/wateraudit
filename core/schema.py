@@ -63,6 +63,15 @@ TIER_1_RAPID_TESTS = [
     "ZN-E",
 ]
 
+# Effluent lab results, shifted by how long each test takes to come back.
+# COD and suspended solids are same-day tests, so yesterday's value is known.
+# BOD needs five days of incubation, so the latest known value is five records old.
+TIER_2_LAGGED_LAB = {
+    "DQO-S": 1,
+    "SS-S": 1,
+    "DBO-S": 5,
+}
+
 FORBIDDEN_LEAKAGE_COLUMNS = [
     "RD-DBO-P", "RD-SS-P", "RD-SED-P",
     "RD-DBO-S", "RD-DQO-S",
@@ -72,7 +81,7 @@ FORBIDDEN_LEAKAGE_COLUMNS = [
 
 
 class WWTPDatasetLoader:
-    """Loads and sanitizes the authentic UCI Water Treatment Plant operational dataset."""
+    """Loads the UCI Water Treatment Plant dataset (527 records, 38 attributes)."""
 
     @staticmethod
     def load_raw(data_path: Optional[str] = None) -> pd.DataFrame:
@@ -94,21 +103,27 @@ class WWTPDatasetLoader:
         for col in UCI_ATTRIBUTES:
             df[col] = pd.to_numeric(df[col], errors="coerce").astype(np.float32)
 
-        return df
+        # The file stores the records in monthly blocks, and the blocks are not
+        # in calendar order (March, February, January 1990, then June, May,
+        # April, ...). Lags, rolling windows and a chronological split are only
+        # meaningful after sorting by date.
+        df["Date"] = pd.to_datetime(df["Date"].str.replace("D-", "", regex=False), format="%d/%m/%y")
+        return df.sort_values("Date", kind="stable").reset_index(drop=True)
 
     @staticmethod
     def get_feature_matrix(
         df: pd.DataFrame,
         include_tier_1: bool = True,
-        lag_days: int = 1,
+        include_tier_2: bool = True,
     ) -> Tuple[pd.DataFrame, pd.DataFrame]:
-        """Construct leak-free feature matrix X and target DataFrame Y.
+        """Build the feature matrix X and the target DataFrame Y.
 
-        Enforces:
-        - Strict exclusion of RD-* columns.
-        - Inclusion of Tier 0 online telemetry.
-        - Optional inclusion of Tier 1 rapid settleability tests.
-        - Rolling lags for temporal trends.
+        - RD-* removal-efficiency columns are never used: they are computed
+          from the same-day effluent values the model is predicting.
+        - Tier 0 online probes are always included.
+        - Tier 1 same-day lab tests and Tier 2 lagged effluent lab results are optional.
+        - Rows are records in file order; the file skips some days, so a lag
+          of one record is usually, but not always, one day.
         """
         features: List[str] = list(TIER_0_ONLINE_PROBES)
         if include_tier_1:
@@ -129,6 +144,10 @@ class WWTPDatasetLoader:
         # Relative flow change: delta_Q
         rolling_median_q = X["Q-E"].rolling(7, min_periods=1).median()
         X["delta_Q"] = (X["Q-E"] / (rolling_median_q + 1e-4)) - 1.0
+
+        if include_tier_2:
+            for col, lag in TIER_2_LAGGED_LAB.items():
+                X[f"{col}_lag{lag}"] = df[col].shift(lag)
 
         Y = df[TARGET_COLUMNS].copy()
 
