@@ -32,6 +32,16 @@ The `RD-*` columns are never used. They are removal efficiencies computed from t
 
 ## Method
 
+```mermaid
+flowchart LR
+    T0["Online probes"] --> Q["LightGBM quantile models: 5th, 50th, 95th"]
+    T1["Same-day lab tests"] --> Q
+    T2["Earlier effluent results: COD and SS lag 1, BOD lag 5"] --> Q
+    Q --> CQR["Conformal widening on the calibration set"]
+    CQR --> Risk["Risk index and bands, limits from YAML"]
+    PH["Online pH"] --> Risk
+```
+
 **Soft sensors.** For each target, three LightGBM models predict the 5th, 50th and 95th percentiles of `log(1 + y)`. Conformalized quantile regression (CQR) then widens that raw interval using a held-out calibration set: each calibration record is scored by how far its true value falls outside the raw interval, and the interval is widened by the 90th-percentile score, with the usual finite-sample correction and a minimum of 0.05 on the log scale.
 
 The 90% guarantee of CQR is marginal and assumes calibration and test records are exchangeable. A test on i.i.d. synthetic data checks that the implementation reaches it. The results below show what happens on the plant, where time order breaks that assumption.
