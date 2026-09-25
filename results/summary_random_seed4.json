@@ -1,0 +1,43 @@
+{
+  "split": "random",
+  "seed": 4,
+  "records": {
+    "train": 316,
+    "calibration": 105,
+    "test": 106
+  },
+  "limits_mg_per_l": {
+    "DBO-S": 25.0,
+    "DQO-S": 125.0,
+    "SS-S": 35.0
+  },
+  "interval_coverage_target": 0.9,
+  "interval_coverage": {
+    "BOD": 0.9192,
+    "COD": 0.89
+  },
+  "median_abs_error_mg_per_l": {
+    "BOD": {
+      "soft_sensor_median": 3.89,
+      "latest_lab_value": 5.93
+    },
+    "COD": {
+      "soft_sensor_median": 21.61,
+      "latest_lab_value": 28.48
+    }
+  },
+  "forecast_bands": {
+    "GREEN": 0,
+    "WATCH": 95,
+    "ACT": 11,
+    "RED": 0
+  },
+  "early_warning": {
+    "breach_days": 18,
+    "breaches_flagged_act_or_red": 4,
+    "breaches_flagged_watch_or_above": 18,
+    "act_or_red_days": 11,
+    "act_or_red_without_breach": 7,
+    "risk_index_auroc": 0.665
+  }
+}

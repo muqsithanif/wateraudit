@@ -1,181 +1,100 @@
 # wateraudit
 
-Industrial and municipal wastewater treatment plant (WWTP) effluent compliance monitoring, real-time soft-sensing, and multi-stage settler fault diagnostics evaluated on the authentic **UCI Water Treatment Plant Benchmark Dataset**.
+Soft sensors for effluent BOD and COD at a municipal wastewater treatment plant, with 90% prediction intervals and a compliance risk index, tested in time order on the UCI Water Treatment Plant dataset.
 
-![Water Audit Dashboard](samples/water_audit_dashboard.png)
+![Test-period dashboard](samples/water_audit_dashboard.png)
 
-*Operational effluent compliance dashboard: Online soft-sensor predicted median with 90% conformal prediction bounds vs actual laboratory BOD/COD measurements, and continuous Environmental Compliance Risk Index (ECRI) timeline.*
-
----
-
-## The Industrial Problem: Laboratory Delays vs Real-Time Compliance
-
-Environmental regulations (EU Directive 91/271/EEC, US EPA Clean Water Act, and Indonesia KLHK Baku Mutu Air Limbah) impose strict statutory concentration limits on wastewater discharge:
-- **Biochemical Oxygen Demand (BOD₅):** $\le 30.0\text{ mg/L}$
-- **Chemical Oxygen Demand (COD):** $\le 125.0\text{ mg/L}$
-- **Suspended Solids (SS):** $\le 35.0\text{ mg/L}$
-- **Acidity/Alkalinity:** $6.5 \le \text{pH} \le 8.5$
-
-### The 5-Day Feedback Lag
-Measuring Biochemical Oxygen Demand in an analytical wet chemistry laboratory requires **5 full incubation days ($\text{BOD}_5$)**. If an industrial aeration basin or clarifier experiences toxic inhibition or sludge bulking today, laboratory results arrive 5 days after thousands of cubic meters of non-compliant effluent have already contaminated downstream waterways.
-
-`wateraudit` bridges this feedback gap with **online machine learning soft-sensors** and **distribution-free conformal prediction bounds**.
+*Test period, May to October 1991. The top two panels compare lab BOD and COD with the predicted median and the 90% conformal interval. The bottom panel is the risk index computed from the forecast alone.*
 
 ---
 
-## Authentic Benchmark Dataset: UCI Water Treatment Plant
+## Why a soft sensor
 
-All models and diagnostics are evaluated on the official **UCI Machine Learning Repository Water Treatment Plant Dataset** (`D-1/3/90` through operational lifecycle):
-- **527 daily multi-sensor records** from an operational urban wastewater treatment plant.
-- **38 continuous physical/chemical attributes** tracking four plant stages:
-  - **Inlet (`-E`):** Influent flow rate ($Q$), Zinc ($Zn$), pH, BOD, COD, Suspended Solids, Volatile Solids, Sediments, Conductivity.
-  - **Primary Clarifier (`-P`):** Settler pH, BOD, SS, SSV, Sediments, Conductivity.
-  - **Secondary / Biological Settler (`-D`):** Aeration tank & secondary clarifier parameters.
-  - **Final Discharge / Effluent (`-S`):** Effluent concentrations and global removal efficiencies (`RD-*`).
+A BOD test needs five days of incubation. By the time the lab reports that effluent broke the discharge limit, that water left the plant days earlier. A soft sensor estimates the value from what is known now: online probes, same-day lab tests, and whichever earlier effluent results have already come back.
 
-### Feature Tier Hierarchy & Strict Leakage Guard
-`core/schema.py` enforces strict operational data partitioning:
+## Data
 
-```
-T0: Instantaneous Online Probes    Q-E, PH-{E,P,D,S}, COND-{E,P,D,S} (Zero laboratory lag)
-T1: Rapid Physical Lab Tests       SED-{E,P,D}, SSV-{E,P,D}, ZN-E (Hourly settleability)
-T2: Slow Chemical Lab Tests        Lagged BOD, COD, SS (Lag >= 1 day only)
-FORBIDDEN / LEAKAGE GUARD          All RD-* removal efficiency columns and same-day target outputs
-```
-*Any column calculated from same-day output concentrations (e.g. `RD-DBO-G = 1 - DBO-S/DBO-E`) is programmatically rejected by the schema to guarantee zero data leakage.*
+The [UCI Water Treatment Plant dataset](https://archive.ics.uci.edu/dataset/106/water+treatment+plant): 527 daily records from an urban plant between January 1990 and October 1991, with 38 attributes across the inlet (`-E`), primary settler (`-P`), secondary settler (`-D`) and outlet (`-S`). Some days are missing. The file is included in `data/`.
 
----
+The raw file stores the records in monthly blocks, and the blocks are not in calendar order. The loader sorts by date before anything time-based is computed.
 
-## Mathematical Architecture
+## Features, by when they are known
 
-### 1. Conformalized Quantile Regression (CQR)
-For hard-to-measure constituents $Y \in \{\text{BOD, COD, SS}\}$, three LightGBM models are trained on log-transformed targets $\tilde{y} = \ln(1 + y)$ under pinball loss for quantiles $\tau \in \{0.05, 0.50, 0.95\}$:
-
-$$\ell_\tau(y, q) = \max\big( \tau(y - q), \; (\tau - 1)(y - q) \big)$$
-
-On a chronological calibration set $\mathcal{C}$ ($N_c = 105$ days), non-conformity scores calibrate interval expansion:
-
-$$s_i = \max\left( \hat{q}_{0.05}(x_i) - \tilde{y}_i, \; \tilde{y}_i - \hat{q}_{0.95}(x_i) \right)$$
-
-$$\hat{Q} = s_{\left( \lceil (N_c + 1)(1 - \alpha) \rceil \right)}$$
-
-$$\mathcal{C}(x) = \left[ \exp\big(\hat{q}_{0.05}(x) - \hat{Q}\big) - 1, \; \exp\big(\hat{q}_{0.95}(x) + \hat{Q}\big) - 1 \right]$$
-
-This guarantees marginal empirical coverage $P(Y \in \mathcal{C}(X)) \ge 1 - \alpha = 90\%$.
-
-### 2. Environmental Compliance Risk Index (ECRI)
-Rather than a brittle binary threshold, `wateraudit` computes a continuous, severity-weighted risk index:
-
-$$\text{ECRI}_t = 1 - \prod_{j=1}^m (1 - \pi_{j, t}) \cdot \exp\left( -\sum_{j=1}^m \delta_{j, t} \right) \in [0, 1]$$
-
-Where:
-- $\pi_{j, t} = P(Y_j > L_j \mid x_t)$: Exceedance probability evaluated from the conformal predictive distribution.
-- $\delta_{j, t} = \frac{\max(0, \, \hat{y}_{\text{med}, j} - L_j)}{L_j}$: Fractional limit overshoot penalty.
-
-**Alert Tiers:**
-- `GREEN` ($\text{ECRI} < 0.20$): Fully compliant operation.
-- `WATCH` ($0.20 \le \text{ECRI} < 0.50$): Parameter elevation; supervisory inspection.
-- `ACT` ($0.50 \le \text{ECRI} < 0.80$): Imminent breach risk; adjust aeration/recirculation.
-- `RED` ($\text{ECRI} \ge 0.80$ or measured breach): Discharge violation emergency alert.
-
-### 3. Additive Log-Ratio Stage Decomposition & Fault Attribution
-Stage removal efficiency is formulated in log-concentration space:
-
-$$\ell^c_{\text{stage}} = \ln\left( \frac{C^c_{\text{out}}}{C^c_{\text{in}}} \right), \quad c \in \{\text{BOD, COD, SS}\}$$
-
-$$\ell^c_{\text{global}} = \ell^c_{E \to P} + \ell^c_{P \to D} + \ell^c_{D \to S} \quad \text{(Pre-treatment + Primary + Secondary)}$$
-
-Observed deviation vectors are compared against prototypical failure signatures via cosine similarity:
-
-| Fault Hypothesis | Distinctive Physical Signature |
-|---|---|
-| **Hydraulic Shock Load** | $\Delta Q \gg 0$; simultaneous efficiency drops across primary and secondary settlers. |
-| **Sludge Bulking** | Secondary settler solids loss ($\ell^{SS}_{D \to S} \gg 0$); high effluent sediments; flow normal. |
-| **Toxic Shock / Bio-Inhibition**| Biological BOD removal collapses while physical solids settling remains normal. |
-| **Primary Settler Mechanical Fault**| Selective degradation of primary clarifier solids retention; biological stage compensates. |
-
----
-
-## Performance Diagnostics on Test Set
-
-Evaluated chronologically on 106 held-out operational days:
-
-| Evaluation Metric | Measured Performance | Nominal Target |
+| Tier | Columns | Known |
 |---|---|---|
-| **BOD Conformal Coverage (CQR)** | **77.1%** | 90.0% ($\pm 10\%$) |
-| **COD Conformal Coverage (CQR)** | **89.3%** | 90.0% ($\pm 2\%$) |
-| **Average Test ECRI Score** | **0.317 (WATCH)** | < 0.50 |
-| **Inference Latency** | **< 1.5 ms / record** | < 100 ms |
-| **False Negative Violations** | **0 (Zero Missed Breach)** | 0 |
+| 0: online probes | flow `Q-E`; pH and conductivity at all four stages | continuously |
+| 1: same-day lab tests | sediments `SED-*`, volatile suspended solids `SSV-*`, zinc `ZN-E` | the same day |
+| 2: earlier effluent results | COD and SS from the previous record, BOD from five records back | when each test comes back |
+
+One-record lags and 7-record rolling means of inlet flow, conductivity and pH are added on top, along with inlet flow relative to its 7-record median.
+
+The `RD-*` columns are never used. They are removal efficiencies computed from the same-day effluent values the model is predicting, so they would leak the answer. `core/schema.py` refuses them, and a test checks that the tier-2 features only carry results that were available at prediction time.
+
+## Method
+
+**Soft sensors.** For each target, three LightGBM models predict the 5th, 50th and 95th percentiles of `log(1 + y)`. Conformalized quantile regression (CQR) then widens that raw interval using a held-out calibration set: each calibration record is scored by how far its true value falls outside the raw interval, and the interval is widened by the 90th-percentile score, with the usual finite-sample correction and a minimum of 0.05 on the log scale.
+
+The 90% guarantee of CQR is marginal and assumes calibration and test records are exchangeable. A test on i.i.d. synthetic data checks that the implementation reaches it. The results below show what happens on the plant, where time order breaks that assumption.
+
+**Risk index.** Each soft sensor converts its interval into a rough probability of exceeding the limit. The index combines those with the online pH reading as `1 − Π(1 − p)`, and pushes it higher when a predicted median is already over its limit. Bands: GREEN below 0.20, then WATCH, ACT from 0.50, and RED from 0.80.
+
+Limits and bands are read from `configs/limits.yaml`. BOD 25 mg/L, COD 125 mg/L and SS 35 mg/L are the concentration limits of EU Directive 91/271/EEC. The directive sets no pH limit, so 6.5–8.5 is an assumed operating band.
+
+**Stage diagnostics.** Suspended-solids removal is split into primary and secondary stages as log ratios, with a CUSUM on the secondary stage. A record whose diagnostic vector leaves the normal range is matched against hand-set signatures: hydraulic shock, sludge bulking, toxic shock, and primary settler fault. The normal range is set from the training period. The dataset has no fault labels, so this part is a rule-based sketch, not a validated classifier.
 
 ---
 
-## Project Structure
+## Results
 
-```
-wateraudit/
-├── configs/
-│   └── limits.yaml        # Environmental discharge limits (BOD, COD, SS, pH) and alert bands
-├── core/
-│   ├── schema.py          # UCI column taxonomy, feature tiers, and leakage prevention
-│   ├── softsense.py       # Quantile boosted regression and CQR conformal calibration
-│   ├── compliance.py      # ECRI risk index calculation and regulatory alert banding
-│   ├── efficiency.py      # Additive log-ratio stage decomposition and fault attribution
-│   └── visualizer.py      # 3-Panel environmental operational dashboard renderer
-├── data/
-│   ├── water-treatment.data   # Official UCI benchmark operational dataset (527 records)
-│   └── water-treatment.names  # Attribute description & donor documentation
-├── samples/
-│   └── water_audit_dashboard.png # High-resolution operational telemetry dashboard
-├── scripts/
-│   └── run_audit.py       # Main end-to-end execution script
-├── tests/
-│   ├── test_schema.py     # Data types, missing value parsing, and leakage guards
-│   ├── test_softsense.py  # Quantile uncrossing and conformal coverage bounds
-│   ├── test_compliance.py # Regulatory violation logic and ECRI bounds
-│   └── test_efficiency.py # Log-ratio decomposition and fault signature classification
-├── requirements.txt
-└── README.md
-```
+The records are split in time order. The first 316 (January 1990 to January 1991) are used for training, the next 105 (to May 1991) for calibration, and the last 106 (May to October 1991) for testing.
+
+| | BOD | COD |
+|---|---:|---:|
+| Coverage of the 90% interval | 79.0% | 90.2% |
+| Mean absolute error of the predicted median | 6.9 mg/L | 28.5 mg/L |
+| Mean absolute error of the latest known lab value | 10.0 mg/L | 30.5 mg/L |
+
+The predicted median beats carrying forward the latest available lab result: by about 30% for BOD, and only slightly for COD.
+
+**BOD coverage falls short of 90% because time order breaks exchangeability.** The intervals are sized on January to May 1991, when effluent BOD never went above 33 mg/L, and then applied to the following five months. Those months include an event on 17–19 July 1991 with effluent BOD above 100 mg/L. With a shuffled split, which restores exchangeability, BOD coverage over five seeds is 92–95% and COD coverage is 86–95%, with means of 94% and 90%.
+
+**As an early warning, the index is weak.** The lab later confirmed a BOD or COD breach on 14 test records. The forecast alone put 4 of them in ACT, and 6 of the 10 ACT records had no breach. The index ranks breach records above the others with an AUROC of 0.60. It reaches ACT on the second and third days of the July event, but most isolated exceedances stay at WATCH. No test record is GREEN, so at these thresholds WATCH carries no information.
+
+These figures come from the forecast alone. An earlier version fed measured breaches into the index, which flags every breach by definition. The index is now scored without the lab result.
+
+Stage diagnostics put 103 of the 106 test records inside the normal range, and the CUSUM does not alarm.
+
+All figures come from `results/summary_chronological.json` and `results/summary_random_seed*.json`.
 
 ---
 
-## Quick Start
+## Limits
 
-### 1. Installation
+- One plant, 106 test records, and 14 breaches. Every percentage above carries wide uncertainty.
+- The limits are one reasonable choice, not the permit this plant operated under.
+- The available measurements explain part of the effluent variation, not most of it. Aeration-tank biology, influent composition and weather are not in the data.
+- The stage diagnostics are not validated against labelled faults.
+
+## Run it
 
 ```bash
-git clone https://github.com/muqsithanif/wateraudit.git
-cd wateraudit
-
-python -m venv .venv
-# On Windows:
-.venv\Scripts\activate
-# On Linux/macOS:
-source .venv/bin/activate
-
 pip install -r requirements.txt
+python scripts/run_audit.py                          # time-ordered split; writes the dashboard
+python scripts/run_audit.py --split random --seed 1  # shuffled split, for comparison
+pytest -q
 ```
 
-### 2. Run Audit & Soft-Sensing Pipeline
+## Tests
 
-```bash
-python scripts/run_audit.py
-```
-Loads the UCI dataset, trains quantile soft-sensors, calibrates conformal intervals, scores daily discharge compliance, and saves `samples/water_audit_dashboard.png`.
+There are fourteen tests. These are the ones worth naming:
 
-### 3. Run Automated Tests
+- **Coverage holds when its assumption does.** On i.i.d. synthetic data, the 90% interval covers between 87% and 93%.
+- **A forecast is scored without the lab result.** The same prediction is RED when the measured breach is passed in, and is not RED without it.
+- **Lagged features only carry results that were already available.** COD and SS are shifted by one record, BOD by five.
+- **Records come back in calendar order.** Lags and the split depend on it.
+- **An ordinary day comes out as normal.** Cosine similarity alone names a fault for every day. The deviation gate is what lets a nominal day through.
+- **Limits come from the config file.**
 
-```bash
-pytest tests -v
-```
+## Data license
 
----
-
-## Automated Invariant Tests
-
-Nine unit tests enforce physical, mathematical, and data leakage invariants:
-- **`test_schema.py`:** Enforces zero-tolerance leakage guard (asserts no `RD-*` column is present in feature matrix) and validates that all 38 UCI attributes parse to float32.
-- **`test_softsense.py`:** Enforces quantile uncrossing ($q_{0.05} \le q_{0.50} \le q_{0.95}$), non-negative concentration bounds, and validates non-zero conformal adjustments.
-- **`test_compliance.py`:** Verifies that statutory exceedances trigger `RED` alerts and validates pH boundary checking.
-- **`test_efficiency.py`:** Tests additive log-ratio mass balance and verifies correct classification of hydraulic shock loads vs normal operating regimes.
+The UCI Water Treatment Plant dataset was created by Manel Poch and is licensed under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/), [doi:10.24432/C5FS4C](https://doi.org/10.24432/C5FS4C).

@@ -1,0 +1,52 @@
+{
+  "split": "chronological",
+  "seed": null,
+  "records": {
+    "train": 316,
+    "calibration": 105,
+    "test": 106
+  },
+  "limits_mg_per_l": {
+    "DBO-S": 25.0,
+    "DQO-S": 125.0,
+    "SS-S": 35.0
+  },
+  "interval_coverage_target": 0.9,
+  "interval_coverage": {
+    "BOD": 0.7905,
+    "COD": 0.902
+  },
+  "median_abs_error_mg_per_l": {
+    "BOD": {
+      "soft_sensor_median": 6.9,
+      "latest_lab_value": 9.99
+    },
+    "COD": {
+      "soft_sensor_median": 28.47,
+      "latest_lab_value": 30.49
+    }
+  },
+  "forecast_bands": {
+    "GREEN": 0,
+    "WATCH": 96,
+    "ACT": 10,
+    "RED": 0
+  },
+  "early_warning": {
+    "breach_days": 14,
+    "breaches_flagged_act_or_red": 4,
+    "breaches_flagged_watch_or_above": 14,
+    "act_or_red_days": 10,
+    "act_or_red_without_breach": 6,
+    "risk_index_auroc": 0.601
+  },
+  "stage_diagnostics": {
+    "normal_radius": 2.079,
+    "cusum_alarm_days": 0,
+    "top_hypothesis_counts": {
+      "Normal Operation": 103,
+      "Hydraulic Shock Load": 1,
+      "Toxic Shock / Bio-Inhibition": 2
+    }
+  }
+}
